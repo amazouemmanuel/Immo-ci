@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+     import { useState, useRef, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════
 // SUPABASE CONFIG
@@ -134,7 +134,18 @@ function AuthScreen({ onLogin }) {
     try {
       const existing = await db.get("users", `email=eq.${encodeURIComponent(form.email)}`);
       if(existing.length) return setErr("Email déjà utilisé.");
-      setErr(""); genOtp();
+      const code = genOtp();
+      // Envoyer le vrai email OTP via Resend
+      const emailRes = await fetch("/api/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, otp: code }),
+      });
+      if(!emailRes.ok) {
+        // Si l'email échoue, on continue quand même en mode démo
+        console.warn("Email OTP non envoyé — mode démo actif");
+      }
+      setErr("");
       setPendingUser({ name:form.name, company:form.company||null, email:form.email, password:form.password, role:form.role, status:"actif", avatar:form.role==="promoteur"?"🏢":"👤", whatsapp:form.whatsapp||null, ville:form.ville, verified:false, favoris:[] });
       setStep("otp");
     } catch { setErr("Erreur. Réessayez."); }
@@ -214,11 +225,7 @@ function AuthScreen({ onLogin }) {
             <div style={{ textAlign:"center", marginBottom:18 }}>
               <div style={{ fontSize:38, marginBottom:8 }}>📧</div>
               <h2 style={{ margin:"0 0 4px", color:C.navy, fontSize:17, fontWeight:900 }}>Vérifiez votre email</h2>
-              <p style={{ margin:0, color:C.gray400, fontSize:13 }}>Code envoyé à <strong style={{ color:C.navy }}>{form.email}</strong></p>
-            </div>
-            <div style={{ background:C.greenLight, border:`1.5px dashed ${C.green}`, borderRadius:10, padding:"10px 14px", textAlign:"center", marginBottom:14 }}>
-              <p style={{ margin:"0 0 4px", fontSize:11, color:C.green, fontWeight:700 }}>📬 DÉMO — Votre code :</p>
-              <p style={{ margin:0, fontSize:28, fontWeight:900, letterSpacing:8, color:C.navy }}>{otp}</p>
+              <p style={{ margin:0, color:C.gray400, fontSize:13 }}>Un code à 6 chiffres a été envoyé à <strong style={{ color:C.navy }}>{form.email}</strong></p>
             </div>
             <div style={{ display:"flex", gap:6, justifyContent:"center", marginBottom:14 }}>
               {otpIn.map((v,i) => (
@@ -1083,12 +1090,26 @@ function MonEspacePage({ user, setUsers }) {
                   <button onClick={()=>setMStep("choose")} style={{ background:C.gray100, border:"none", borderRadius:8, padding:"4px 11px", cursor:"pointer", fontWeight:700, fontSize:12, color:C.gray600 }}>←</button>
                   <h2 style={{ margin:0, color:C.navy, fontSize:16, fontWeight:900 }}>🏠 Nouvelle annonce</h2>
                 </div>
-                {[["Titre *","titre","text","Villa 4 pièces Cocody"],["Prix (FCFA) *","prix","number","45000000"],["Adresse *","adresse","text","Cocody, Abidjan"],["Surface (m²)","surface","number",""],["Chambres","chambres","number",""],["URL photo","imageUrl","text","https://..."]].map(([lb,key,type,ph])=>(
+                {[["Titre *","titre","text","Villa 4 pièces Cocody"],["Prix (FCFA) *","prix","number","45000000"],["Adresse *","adresse","text","Cocody, Abidjan"],["Surface (m²)","surface","number",""],["Chambres","chambres","number",""]].map(([lb,key,type,ph])=>(
                   <div key={key} style={{ marginBottom:9 }}>
                     <label style={{ fontSize:12, fontWeight:700, color:C.gray600, display:"block", marginBottom:3 }}>{lb}</label>
                     <input style={iS} type={type} placeholder={ph} value={annForm[key]} onChange={e=>setAnnForm({...annForm,[key]:e.target.value})}/>
                   </div>
                 ))}
+                <div style={{ marginBottom:9 }}>
+                  <label style={{ fontSize:12, fontWeight:700, color:C.gray600, display:"block", marginBottom:3 }}>📷 Photo / Vidéo</label>
+                  <input type="file" accept="image/*,video/*" onChange={async(e)=>{
+                    const file=e.target.files[0]; if(!file) return;
+                    const ext=file.name.split(".").pop();
+                    const path=`listings/${Date.now()}.${ext}`;
+                    const res=await fetch(`${SUPABASE_URL}/storage/v1/object/immo-images/${path}`,{
+                      method:"POST", headers:{"apikey":SUPABASE_KEY,"Authorization":`Bearer ${SUPABASE_KEY}`,"Content-Type":file.type}, body:file
+                    });
+                    if(res.ok){ const url=`${SUPABASE_URL}/storage/v1/object/public/immo-images/${path}`; setAnnForm(prev=>({...prev,imageUrl:url})); }
+                  }} style={{ width:"100%", padding:"8px", borderRadius:8, border:`1.5px solid ${C.gray200}`, fontSize:13, boxSizing:"border-box" }}/>
+                  <p style={{ margin:"4px 0 4px", fontSize:11, color:C.gray400 }}>Ou colle une URL image :</p>
+                  <input style={iS} placeholder="https://..." value={annForm.imageUrl} onChange={e=>setAnnForm({...annForm,imageUrl:e.target.value})}/>
+                </div>
                 <div style={{ display:"flex", gap:9, marginBottom:9 }}>
                   <div style={{ flex:1 }}><label style={{ fontSize:12, fontWeight:700, color:C.gray600, display:"block", marginBottom:3 }}>Type</label><select style={iS} value={annForm.type} onChange={e=>setAnnForm({...annForm,type:e.target.value})}><option value="vente">Vente</option><option value="location">Location</option></select></div>
                   <div style={{ flex:1 }}><label style={{ fontSize:12, fontWeight:700, color:C.gray600, display:"block", marginBottom:3 }}>Ville</label><select style={iS} value={annForm.ville} onChange={e=>setAnnForm({...annForm,ville:e.target.value})}>{["Abidjan","Bouaké","Yamoussoukro","Daloa","San-Pédro","Korhogo"].map(v=><option key={v}>{v}</option>)}</select></div>
@@ -1295,3 +1316,4 @@ export default function App() {
     </div>
   );
 }
+   
